@@ -1,17 +1,39 @@
 import React, { useState, useEffect } from "react";
 import PasswordGenerator from "./PasswordGenrator";
-import "../styles/PasswordManager.css"; // Assuming you have some styles in PasswordManager.css
-const PasswordManager = () => {
-  const [credentials, setCredentials] = useState(() => {
-    const saved = localStorage.getItem("passwords");
-    return saved ? JSON.parse(saved) : [];
-  });
+import "../styles/PasswordManager.css";
 
+const PasswordManager = () => {
+  const [credentials, setCredentials] = useState([]);
   const [formData, setFormData] = useState({
     website: "",
     username: "",
     password: "",
   });
+
+  const userId = localStorage.getItem("userId");
+  const token = localStorage.getItem("token");
+
+  // Fetch saved passwords from backend
+  useEffect(() => {
+    const fetchPasswords = async () => {
+      try {
+        const res = await fetch(`http://localhost:5000/api/passwords/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setCredentials(data);
+        } else {
+          alert(data.error || "Failed to load passwords");
+        }
+      } catch (error) {
+        console.error("Error fetching passwords:", error);
+        alert("Server error fetching passwords.");
+      }
+    };
+
+    if (userId && token) fetchPasswords();
+  }, [userId, token]);
 
   const handleChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -21,19 +43,54 @@ const PasswordManager = () => {
     setFormData((prev) => ({ ...prev, password: newPassword }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const newEntry = { ...formData, id: Date.now() };
-    const updated = [...credentials, newEntry];
-    setCredentials(updated);
-    localStorage.setItem("passwords", JSON.stringify(updated));
-    setFormData({ website: "", username: "", password: "" });
+
+    const payload = {
+      ...formData,
+      userId,
+    };
+
+    try {
+      const res = await fetch("http://localhost:5000/api/passwords/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setCredentials((prev) => [...prev, data]); // add new entry
+        setFormData({ website: "", username: "", password: "" });
+      } else {
+        alert(data.error || "Failed to save password");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Server error saving password.");
+    }
   };
 
-  const deleteEntry = (id) => {
-    const updated = credentials.filter((entry) => entry.id !== id);
-    setCredentials(updated);
-    localStorage.setItem("passwords", JSON.stringify(updated));
+  const deleteEntry = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/passwords/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        setCredentials((prev) => prev.filter((entry) => entry._id !== id));
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to delete");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Server error deleting password.");
+    }
   };
 
   return (
@@ -67,7 +124,6 @@ const PasswordManager = () => {
         />
 
         <PasswordGenerator onGenerate={handleGeneratePassword} />
-
         <button type="submit">Save</button>
       </form>
 
@@ -76,11 +132,11 @@ const PasswordManager = () => {
           <p>No passwords saved.</p>
         ) : (
           credentials.map((entry) => (
-            <div key={entry.id} className="credential">
+            <div key={entry._id} className="credential">
               <strong>{entry.website}</strong>
               <p>Username: {entry.username}</p>
               <p>Password: {entry.password}</p>
-              <button onClick={() => deleteEntry(entry.id)}>Delete</button>
+              <button onClick={() => deleteEntry(entry._id)}>Delete</button>
             </div>
           ))
         )}
